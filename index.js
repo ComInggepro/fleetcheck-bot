@@ -9,10 +9,12 @@ app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
   try {
     const msg = req.body;
-    console.log('Mensaje recibido:', JSON.stringify(msg));
-    const phone = msg.waId;
-    const text = msg.text || '';
+    console.log('BODY COMPLETO:', JSON.stringify(msg, null, 2));
+    const phone = msg.waId || msg.from || msg.senderPhone || msg.contactPhone;
+    const text = msg.text || msg.body || '';
     const tipo = msg.type;
+    console.log('PHONE DETECTADO:', phone);
+    console.log('TEXT DETECTADO:', text);
     if (!phone) return;
     if (tipo === 'image' || tipo === 'document') {
       await sendMessage(phone, '📋 Recibí tu checklist. Analizando con IA...');
@@ -64,19 +66,18 @@ async function sendMessage(phone, message) {
   try {
     const url = `${WATI_URL}/api/v1/sendSessionMessage/${phone}`;
     console.log('Enviando a URL:', url);
-    const response = await axios.post(url, 
+    const response = await axios.post(url,
       { messageText: message },
-      { 
-        headers: { 
+      {
+        headers: {
           Authorization: WATI_TOKEN,
           'Content-Type': 'application/json'
-        } 
+        }
       }
     );
     console.log('Respuesta Wati:', response.status);
   } catch (e) {
     console.error('Error enviando mensaje:', e.response?.data || e.message);
-    console.error('URL usada:', `${WATI_URL}/api/v1/sendSessionMessage/${phone}`);
   }
 }
 app.get('/', (req, res) => res.send('FleetCheck Bot activo ✅'));
