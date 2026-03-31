@@ -3,34 +3,39 @@ const axios = require('axios');
 const app = express();
 app.use(express.json());
 
-const WATI_URL = process.env.WATI_URL;
+const WATI_URL = (process.env.WATI_URL || '').replace(/\/$/, '');
 const WATI_TOKEN = process.env.WATI_TOKEN;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
-  const msg = req.body;
-  const phone = msg.waId;
-  const text = msg.text || '';
-  const tipo = msg.type;
+  try {
+    const msg = req.body;
+    console.log('Mensaje recibido:', JSON.stringify(msg));
+    const phone = msg.waId;
+    const text = msg.text || '';
+    const tipo = msg.type;
 
-  if (!phone) return;
+    if (!phone) return;
 
-  if (tipo === 'image' || tipo === 'document') {
-    await sendMessage(phone, '📋 Recibí tu checklist. Analizando con IA...');
-    const analisis = await analizarConIA('El operador envió un archivo adjunto como checklist de camión.');
-    await sendMessage(phone, analisis);
-    return;
-  }
-
-  if (text) {
-    const lower = text.toLowerCase();
-    if (lower.includes('hola') || lower.includes('checklist') || lower.includes('inicio')) {
-      await sendMessage(phone, '✅ Hola! Soy el bot de FleetCheck Inggepro.\n\nPuedes:\n1️⃣ Enviar una foto o PDF de tu checklist\n2️⃣ Escribir las fallas directamente\n\n¿Cómo quieres reportar hoy?');
-    } else {
-      const analisis = await analizarConIA(text);
+    if (tipo === 'image' || tipo === 'document') {
+      await sendMessage(phone, '📋 Recibí tu checklist. Analizando con IA...');
+      const analisis = await analizarConIA('El operador envió un archivo adjunto como checklist de camión.');
       await sendMessage(phone, analisis);
+      return;
     }
+
+    if (text) {
+      const lower = text.toLowerCase();
+      if (lower.includes('hola') || lower.includes('checklist') || lower.includes('inicio')) {
+        await sendMessage(phone, '✅ Hola! Soy el bot de FleetCheck Inggepro.\n\nPuedes:\n1️⃣ Enviar una foto o PDF de tu checklist\n2️⃣ Escribir las fallas directamente\n\n¿Cómo quieres reportar hoy?');
+      } else {
+        const analisis = await analizarConIA(text);
+        await sendMessage(phone, analisis);
+      }
+    }
+  } catch(e) {
+    console.error('Error webhook:', e.message);
   }
 });
 
@@ -57,7 +62,7 @@ Sé breve y directo. Reporte: ${contenido}`
     });
     return response.data.content[0].text;
   } catch (e) {
-    console.error('Error IA:', e.message);
+    console.error('Error IA:', e.response?.data || e.message);
     return '❌ Error al analizar el checklist. Intenta nuevamente.';
   }
 }
@@ -65,7 +70,8 @@ Sé breve y directo. Reporte: ${contenido}`
 async function sendMessage(phone, message) {
   try {
     const url = `${WATI_URL}/api/v1/sendSessionMessage/${phone}`;
-    await axios.post(url, 
+    console.log('Enviando a URL:', url);
+    const response = await axios.post(url, 
       { messageText: message },
       { 
         headers: { 
@@ -74,8 +80,10 @@ async function sendMessage(phone, message) {
         } 
       }
     );
+    console.log('Respuesta Wati:', response.status);
   } catch (e) {
     console.error('Error enviando mensaje:', e.response?.data || e.message);
+    console.error('URL usada:', `${WATI_URL}/api/v1/sendSessionMessage/${phone}`);
   }
 }
 
