@@ -2,11 +2,9 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 app.use(express.json());
-
 const WATI_URL = (process.env.WATI_URL || '').replace(/\/$/, '');
 const WATI_TOKEN = process.env.WATI_TOKEN;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
-
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
   try {
@@ -15,16 +13,13 @@ app.post('/webhook', async (req, res) => {
     const phone = msg.waId;
     const text = msg.text || '';
     const tipo = msg.type;
-
     if (!phone) return;
-
     if (tipo === 'image' || tipo === 'document') {
       await sendMessage(phone, '📋 Recibí tu checklist. Analizando con IA...');
       const analisis = await analizarConIA('El operador envió un archivo adjunto como checklist de camión.');
       await sendMessage(phone, analisis);
       return;
     }
-
     if (text) {
       const lower = text.toLowerCase();
       if (lower.includes('hola') || lower.includes('checklist') || lower.includes('inicio')) {
@@ -38,7 +33,6 @@ app.post('/webhook', async (req, res) => {
     console.error('Error webhook:', e.message);
   }
 });
-
 async function analizarConIA(contenido) {
   try {
     const response = await axios.post('https://api.anthropic.com/v1/messages', {
@@ -66,7 +60,6 @@ Sé breve y directo. Reporte: ${contenido}`
     return '❌ Error al analizar el checklist. Intenta nuevamente.';
   }
 }
-
 async function sendMessage(phone, message) {
   try {
     const url = `${WATI_URL}/api/v1/sendSessionMessage/${phone}`;
@@ -75,7 +68,7 @@ async function sendMessage(phone, message) {
       { messageText: message },
       { 
         headers: { 
-          Authorization: `Bearer ${WATI_TOKEN}`,
+          Authorization: WATI_TOKEN,
           'Content-Type': 'application/json'
         } 
       }
@@ -86,8 +79,6 @@ async function sendMessage(phone, message) {
     console.error('URL usada:', `${WATI_URL}/api/v1/sendSessionMessage/${phone}`);
   }
 }
-
 app.get('/', (req, res) => res.send('FleetCheck Bot activo ✅'));
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Bot corriendo en puerto ${PORT}`));
