@@ -5,23 +5,39 @@ app.use(express.json());
 const WATI_URL = (process.env.WATI_URL || '').replace(/\/$/, '');
 const WATI_TOKEN = process.env.WATI_TOKEN;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
+
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
   try {
     const msg = req.body;
-    console.log('BODY COMPLETO:', JSON.stringify(msg, null, 2));
-    const phone = msg.waId || msg.from || msg.senderPhone || msg.contactPhone;
+    console.log('BODY:', JSON.stringify(msg));
+    
+    // Buscar número del remitente en todos los campos posibles
+    const phone = msg.waId || 
+                  msg.from || 
+                  (msg.conversation && msg.conversation.id) ||
+                  (msg.contact && msg.contact.phone) ||
+                  msg.senderPhone;
+                  
     const text = msg.text || msg.body || '';
     const tipo = msg.type;
-    console.log('PHONE DETECTADO:', phone);
-    console.log('TEXT DETECTADO:', text);
-    if (!phone) return;
+    
+    console.log('PHONE:', phone);
+    console.log('TEXT:', text);
+    console.log('TIPO:', tipo);
+
+    if (!phone) {
+      console.log('No se encontró número, ignorando mensaje');
+      return;
+    }
+
     if (tipo === 'image' || tipo === 'document') {
       await sendMessage(phone, '📋 Recibí tu checklist. Analizando con IA...');
       const analisis = await analizarConIA('El operador envió un archivo adjunto como checklist de camión.');
       await sendMessage(phone, analisis);
       return;
     }
+
     if (text) {
       const lower = text.toLowerCase();
       if (lower.includes('hola') || lower.includes('checklist') || lower.includes('inicio')) {
@@ -35,6 +51,7 @@ app.post('/webhook', async (req, res) => {
     console.error('Error webhook:', e.message);
   }
 });
+
 async function analizarConIA(contenido) {
   try {
     const response = await axios.post('https://api.anthropic.com/v1/messages', {
@@ -62,10 +79,11 @@ Sé breve y directo. Reporte: ${contenido}`
     return '❌ Error al analizar el checklist. Intenta nuevamente.';
   }
 }
+
 async function sendMessage(phone, message) {
   try {
     const url = `${WATI_URL}/api/v1/sendSessionMessage/${phone}`;
-    console.log('Enviando a URL:', url);
+    console.log('Enviando a:', url);
     const response = await axios.post(url,
       { messageText: message },
       {
@@ -77,9 +95,10 @@ async function sendMessage(phone, message) {
     );
     console.log('Respuesta Wati:', response.status);
   } catch (e) {
-    console.error('Error enviando mensaje:', e.response?.data || e.message);
+    console.error('Error enviando:', e.response?.data || e.message);
   }
 }
+
 app.get('/', (req, res) => res.send('FleetCheck Bot activo ✅'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Bot corriendo en puerto ${PORT}`));
