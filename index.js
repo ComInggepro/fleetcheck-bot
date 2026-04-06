@@ -104,4 +104,5 @@ async function sendMessage(phone, message) {
 }
 
 app.get('/', (req, res) => res.send('FleetCheck Bot activo'));
-const PORT = process.
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Bot corriendo en puerto ${PORT}`));
