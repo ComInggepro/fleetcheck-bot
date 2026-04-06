@@ -2,34 +2,23 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 app.use(express.json());
+
 const WATI_URL = (process.env.WATI_URL || '').replace(/\/$/, '');
 const WATI_TOKEN = process.env.WATI_TOKEN;
-const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
+const GEMINI_KEY = process.env.GEMINI_KEY;
 
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
   try {
     const msg = req.body;
     console.log('BODY:', JSON.stringify(msg));
-    
-    // Buscar número del remitente en todos los campos posibles
-    const phone = msg.waId || 
-                  msg.from || 
-                  (msg.conversation && msg.conversation.id) ||
-                  (msg.contact && msg.contact.phone) ||
-                  msg.senderPhone;
-                  
+    const phone = msg.waId || msg.from || (msg.conversation && msg.conversation.id);
     const text = msg.text || msg.body || '';
     const tipo = msg.type;
-    
     console.log('PHONE:', phone);
     console.log('TEXT:', text);
-    console.log('TIPO:', tipo);
 
-    if (!phone) {
-      console.log('No se encontró número, ignorando mensaje');
-      return;
-    }
+    if (!phone) return;
 
     if (tipo === 'image' || tipo === 'document') {
       await sendMessage(phone, '📋 Recibí tu checklist. Analizando con IA...');
@@ -54,26 +43,23 @@ app.post('/webhook', async (req, res) => {
 
 async function analizarConIA(contenido) {
   try {
-    const response = await axios.post('https://api.anthropic.com/v1/messages', {
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages: [{
-        role: 'user',
-        content: `Eres el asistente de FleetCheck para la empresa Inggepro. Analiza este reporte de checklist de camión y responde en español con:
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        contents: [{
+          parts: [{
+            text: `Eres el asistente de FleetCheck para la empresa Inggepro. Analiza este reporte de checklist de camión y responde en español con:
 1. ✅ Confirmación de recepción
 2. ⚠️ Fallas detectadas (si hay)
 3. 🚨 Si hay fallas CRÍTICAS indícalo claramente
 4. 📊 Nivel de riesgo: BAJO / MEDIO / ALTO
 Sé breve y directo. Reporte: ${contenido}`
-      }]
-    }, {
-      headers: {
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json'
-      }
-    });
-    return response.data.content[0].text;
+          }]
+        }]
+      },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    return response.data.candidates[0].content.parts[0].text;
   } catch (e) {
     console.error('Error IA:', e.response?.data || e.message);
     return '❌ Error al analizar el checklist. Intenta nuevamente.';
