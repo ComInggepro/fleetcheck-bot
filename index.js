@@ -26,6 +26,7 @@ app.post('/webhook', async (req, res) => {
     if (body.object !== 'whatsapp_business_account') return;
     const entry = body.entry[0];
     const change = entry.changes[0];
+    if (!change.value.messages) return;
     const message = change.value.messages[0];
     if (!message) return;
     const phone = message.from;
