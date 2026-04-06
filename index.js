@@ -5,7 +5,7 @@ app.use(express.json());
 
 const META_TOKEN = process.env.META_TOKEN;
 const META_PHONE_ID = process.env.META_PHONE_ID;
-const GEMINI_KEY = process.env.GEMINI_KEY;
+const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const VERIFY_TOKEN = 'fleetcheck2024';
 
 app.get('/webhook', (req, res) => {
@@ -55,17 +55,24 @@ app.post('/webhook', async (req, res) => {
 
 async function analizarConIA(contenido) {
   try {
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=' + GEMINI_KEY;
-    const prompt = 'Eres el asistente de FleetCheck para Inggepro. Analiza este reporte de checklist de camion y responde en espanol con: 1. Confirmacion de recepcion 2. Fallas detectadas 3. Si hay fallas CRITICAS indicalo 4. Nivel de riesgo: BAJO/MEDIO/ALTO. Se breve. Reporte: ' + contenido;
-    const response = await axios.post(url,
-      { contents: [{ parts: [{ text: prompt }] }] },
-      { headers: { 'Content-Type': 'application/json' } }
+    const response = await axios.post('https://api.anthropic.com/v1/messages',
+      {
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: 'Eres el asistente de FleetCheck para Inggepro. Analiza este reporte de checklist de camion y responde en espanol con: 1. Confirmacion de recepcion 2. Fallas detectadas 3. Si hay fallas CRITICAS indicalo 4. Nivel de riesgo: BAJO/MEDIO/ALTO. Se breve. Reporte: ' + contenido
+        }]
+      },
+      {
+        headers: {
+          'x-api-key': ANTHROPIC_KEY,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        }
+      }
     );
-    const candidates = response.data.candidates;
-    if (candidates && candidates[0] && candidates[0].content && candidates[0].content.parts[0]) {
-      return candidates[0].content.parts[0].text;
-    }
-    return 'No se pudo analizar el checklist.';
+    return response.data.content[0].text;
   } catch (e) {
     console.error('Error IA:', e.response ? e.response.data : e.message);
     return 'Error al analizar. Intenta nuevamente.';
