@@ -58,7 +58,7 @@ app.post('/webhook', async (req, res) => {
 async function analizarConIA(contenido) {
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
       {
         contents: [{
           parts: [{
@@ -96,13 +96,3 @@ async function sendMessage(phone, message) {
           'Content-Type': 'application/json'
         }
       }
-    );
-    console.log('Mensaje enviado a:', phone);
-  } catch (e) {
-    console.error('Error enviando:', e.response?.data || e.message);
-  }
-}
-
-app.get('/', (req, res) => res.send('FleetCheck Bot activo'));
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Bot corriendo en puerto ${PORT}`));
