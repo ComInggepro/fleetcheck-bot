@@ -55,7 +55,7 @@ app.post('/webhook', async (req, res) => {
 
 async function analizarConIA(contenido) {
   try {
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_KEY;
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + GEMINI_KEY;
     const prompt = 'Eres el asistente de FleetCheck para Inggepro. Analiza este reporte de checklist de camion y responde en espanol con: 1. Confirmacion de recepcion 2. Fallas detectadas 3. Si hay fallas CRITICAS indicalo 4. Nivel de riesgo: BAJO/MEDIO/ALTO. Se breve. Reporte: ' + contenido;
     const response = await axios.post(url,
       { contents: [{ parts: [{ text: prompt }] }] },
