@@ -12,8 +12,10 @@ const VERIFY_TOKEN = 'fleetcheck2024';
 const ADMINS = [
   '56979798880', // Sebastián Donetch
   '56976092114', // Francisco Donetch
-  '56958184612', // Francisco Pereira
+  '56958184612', // Francisco Pereira - Jefe Mecánico
 ];
+
+const JEFE_MECANICO = '56958184612'; // Francisco Pereira
 
 // ── BUFFER TEMPORAL DE IMÁGENES POR OPERADOR ──
 const imageBuffer = {};
@@ -50,37 +52,32 @@ app.post('/webhook', async (req, res) => {
     if (tipo === 'image' || tipo === 'document') {
       const mediaId = tipo === 'image' ? message.image.id : message.document.id;
 
-      // Inicializar buffer del operador si no existe
       if (!imageBuffer[phone]) {
         imageBuffer[phone] = [];
       }
 
-      // Agregar imagen al buffer
       imageBuffer[phone].push(mediaId);
       console.log(`📸 Imagen ${imageBuffer[phone].length} recibida de ${phone}`);
 
-      // Si es la primera imagen esperar la segunda
       if (imageBuffer[phone].length === 1) {
         await sendMessage(phone, '✅ Foto 1 recibida. Enviando foto 2...');
         return;
       }
 
-      // Si ya tenemos 2 imágenes procesamos
       if (imageBuffer[phone].length >= 2) {
         await sendMessage(phone, '✅ Checklist recibido. Procesando...');
 
         const mediaId1 = imageBuffer[phone][0];
         const mediaId2 = imageBuffer[phone][1];
-
-        // Limpiar buffer
         delete imageBuffer[phone];
 
-        // Descargar ambas imágenes
         const imagen1 = await descargarImagen(mediaId1);
         const imagen2 = await descargarImagen(mediaId2);
 
         if (imagen1 && imagen2) {
           const analisis = await analizarChecklist(imagen1, imagen2, phone);
+
+          // Notificar a todos los admins
           for (const admin of ADMINS) {
             await sendMessage(admin, `📋 *Checklist recibido*\n📞 Operador: ${phone}\n\n${analisis}`);
           }
@@ -130,7 +127,7 @@ async function descargarImagen(mediaId) {
     });
 
     const base64 = Buffer.from(imgRes.data).toString('base64');
-    console.log(`✅ Imagen ${mediaId} descargada`);
+    console.log(`✅ Imagen descargada`);
     return base64;
   } catch (e) {
     console.error('Error descargando imagen:', e.response?.data || e.message);
@@ -144,7 +141,7 @@ async function analizarChecklist(imagen1, imagen2, phone) {
     const response = await axios.post('https://api.anthropic.com/v1/messages',
       {
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
+        max_tokens: 1500,
         messages: [{
           role: 'user',
           content: [
@@ -158,21 +155,39 @@ async function analizarChecklist(imagen1, imagen2, phone) {
             },
             {
               type: 'text',
-              text: `Eres Pedro, asistente de seguridad de Inggepro. Analiza estas 2 imágenes del checklist de inspección de camión y responde en español con este formato exacto:
+              text: `Eres Pedro, asistente de seguridad de Inggepro. Analiza estas 2 imágenes del checklist de inspección de camión.
 
-🚛 *Análisis de Checklist*
+INSTRUCCIONES IMPORTANTES:
+- Busca las marcas X en la columna CF (Con Falla) — eso es lo que está malo
+- Una X en la columna CF indica falla confirmada
+- Ignora las columnas B (Bueno) y NA (No Aplica)
+
+CLASIFICACIÓN DE FALLAS (solo reporta los ítems con X en columna CF):
+
+🔴 CRÍTICOS (detener operación inmediatamente):
+Luces Delanteras, Mandos de Control, Sistema Eléctrico, Neumático de Repuesto, Estanque de Residuos, Estanque Agua Potable, Coplas Manguera Jet, Freno Carrete, Manguera Jet, Freno de Mano, Pedal, Delantero Derecho, Delantero Izquierdo, Trasero Derecho, Trasero Izquierdo, Aceite Motor, Aceite Hidráulico
+
+🟡 MEDIOS (reparar a la brevedad):
+Luces Traseras, Luces Estacionamiento, Portador Tubo Succión
+
+🟢 BAJOS (programar mantención):
+Luces Laterales Derecha, Luces Laterales Izquierda, Luces de Cabina
+
+Responde en español con este formato exacto:
+
+🚛 *Análisis Checklist Inggepro*
 📞 Operador: ${phone}
 
-✅ *Ítems en buen estado:* [lista breve]
+📋 *Fallas detectadas (columna CF):*
+🔴 Críticas: [lista o "Ninguna"]
+🟡 Medias: [lista o "Ninguna"]
+🟢 Bajas: [lista o "Ninguna"]
 
-📋 *Fallas detectadas:*
-- Críticas 🔴: [lista o "Ninguna"]
-- Medias 🟡: [lista o "Ninguna"]
-- Menores 🟢: [lista o "Ninguna"]
+⚠️ *Nivel de riesgo general:* BAJO / MEDIO / ALTO / CRÍTICO
 
-⚠️ *Nivel de riesgo:* BAJO / MEDIO / ALTO
+📝 *Recomendación:* [acción inmediata si hay críticos, sino mantenimiento programado]
 
-📝 *Observaciones:* [observaciones relevantes]`
+Si no detectas ninguna X en columna CF responde que el checklist está OK sin fallas.`
             }
           ]
         }]
