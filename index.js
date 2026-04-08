@@ -22,10 +22,10 @@ let registroDelDia = {};
 let reporteEnviado = false;
 let fechaActual = '';
 
-// ── OPERADORES REGISTRADOS (agregar todos aquí) ──
+// ── OPERADORES REGISTRADOS ──
 const OPERADORES = [
-  // Ejemplo: '56912345678',
   // Agrega aquí los números de todos los operadores
+  // Ejemplo: '56912345678',
 ];
 
 // ── BUFFER TEMPORAL DE IMÁGENES POR OPERADOR ──
@@ -50,35 +50,42 @@ function verificarDia() {
     fechaActual = hoy;
     registroDelDia = {};
     reporteEnviado = false;
-    console.log(`📅 Nuevo día detectado: ${hoy} - Registro reseteado`);
+    console.log(`📅 Nuevo día: ${hoy} - Registro reseteado`);
   }
 }
 
-// ── VERIFICAR HORA Y ENVIAR REPORTE 9:30 AM ──
-async function verificarReporte930() {
-  const ahora = new Date().toLocaleTimeString('es-CL', { timeZone: 'America/Santiago', hour: '2-digit', minute: '2-digit', hour12: false });
+// ── VERIFICAR HORA Y DÍA PARA REPORTE ──
+async function verificarReporte() {
+  const ahora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Santiago' }));
+  const hora = ahora.toTimeString().slice(0, 5);
+  const diaSemana = ahora.getDay();
+
   verificarDia();
 
-  if (ahora >= '09:30' && !reporteEnviado) {
+  const esDiaReporte = [1, 3, 5].includes(diaSemana);
+
+  if (hora >= '09:00' && hora <= '09:01' && esDiaReporte && !reporteEnviado) {
     reporteEnviado = true;
-    await enviarReporte930();
+    await enviarReporte();
   }
 }
 
-// ── GENERAR Y ENVIAR REPORTE 9:30 AM ──
-async function enviarReporte930() {
+// ── GENERAR Y ENVIAR REPORTE ──
+async function enviarReporte() {
   const enviaron = Object.keys(registroDelDia).filter(p => registroDelDia[p].enviado);
   const noEnviaron = OPERADORES.filter(p => !registroDelDia[p]?.enviado);
 
   const fecha = new Date().toLocaleDateString('es-CL', { timeZone: 'America/Santiago' });
+  const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const dia = diasSemana[new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Santiago' })).getDay()];
 
-  let reporte = `📊 *Reporte Checklist Inggepro*\n📅 ${fecha} | ⏰ 09:30 AM\n\n`;
+  let reporte = `📊 *Reporte Checklist Inggepro*\n📅 ${dia} ${fecha} | ⏰ 09:00 AM\n\n`;
 
   reporte += `✅ *Enviaron checklist (${enviaron.length}):*\n`;
   if (enviaron.length > 0) {
     enviaron.forEach(p => {
       const info = registroDelDia[p];
-      reporte += `• ${p} | Riesgo: ${info.riesgo || 'Sin datos'}\n`;
+      reporte += `• ${p} | Riesgo: ${info.riesgo || 'Sin datos'} | ⏰ ${info.hora}\n`;
     });
   } else {
     reporte += `• Ninguno\n`;
@@ -91,16 +98,15 @@ async function enviarReporte930() {
     reporte += `• Todos enviaron ✅\n`;
   }
 
-  // Enviar a todos los admins
   for (const admin of ADMINS) {
     await sendMessage(admin, reporte);
   }
 
-  console.log('📊 Reporte 9:30 AM enviado');
+  console.log(`📊 Reporte ${dia} 09:00 AM enviado`);
 }
 
 // ── REVISAR CADA MINUTO ──
-setInterval(verificarReporte930, 60000);
+setInterval(verificarReporte, 60000);
 
 // ── WEBHOOK PRINCIPAL ──
 app.post('/webhook', async (req, res) => {
@@ -136,7 +142,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (imageBuffer[phone].length >= 2) {
-        await sendMessage(phone, '✅ Checklist recibido. Procesando...');
+        await sendMessage(phone, '⏳ Checklist recibido. Verificando calidad de las fotos...');
 
         const mediaId1 = imageBuffer[phone][0];
         const mediaId2 = imageBuffer[phone][1];
@@ -149,7 +155,23 @@ app.post('/webhook', async (req, res) => {
           const resultado = await analizarChecklist(imagen1, imagen2, phone);
 
           if (resultado.reenviar) {
-            await sendMessage(phone, `⚠️ No pude leer bien tu checklist. Por favor reenvía las fotos siguiendo estas instrucciones:\n\n📸 *Cómo tomar la foto correctamente:*\n1️⃣ Coloca el checklist en una superficie plana\n2️⃣ Toma la foto de frente, sin ángulo\n3️⃣ Asegúrate que haya buena iluminación\n4️⃣ Que se vea la hoja completa y nítida\n5️⃣ No muevas la cámara al sacar la foto\n\nEnvía las 2 fotos nuevamente. 📋`);
+            await sendMessage(phone, 
+`❌ *Fotos rechazadas — No se puede leer el checklist*
+
+Por favor vuelve a tomar las fotos siguiendo EXACTAMENTE estas instrucciones:
+
+📋 *Instrucciones obligatorias:*
+1️⃣ Coloca el checklist sobre una superficie plana y firme
+2️⃣ La hoja debe estar completamente extendida, sin arrugas ni dobleces
+3️⃣ Toma la foto desde arriba, perpendicular a la hoja (sin ángulo)
+4️⃣ El checklist debe ocupar TODA la foto, sin cortarse ningún borde
+5️⃣ Buena iluminación — sin sombras sobre la hoja
+6️⃣ La foto debe estar enfocada — todas las letras y columnas deben leerse claramente
+7️⃣ No muevas la cámara al sacar la foto
+
+⚠️ *Si la foto no cumple estas condiciones será rechazada nuevamente.*
+
+Envía las 2 fotos nuevamente. 📸`);
             return;
           }
 
@@ -168,8 +190,15 @@ app.post('/webhook', async (req, res) => {
 
           // Si hay críticos alertar inmediatamente a Francisco Pereira
           if (resultado.tieneCriticos) {
-            await sendMessage(JEFE_MECANICO, `🚨 *ALERTA CRÍTICA*\n📞 Operador: ${phone}\n⏰ ${registroDelDia[phone].hora}\n\n${resultado.analisis}\n\n⚠️ Se requiere revisión mecánica INMEDIATA.`);
-            console.log(`🚨 Alerta crítica enviada a Francisco Pereira por operador ${phone}`);
+            await sendMessage(JEFE_MECANICO,
+`🚨 *ALERTA CRÍTICA — REVISIÓN INMEDIATA*
+📞 Operador: ${phone}
+⏰ ${registroDelDia[phone].hora}
+
+${resultado.analisis}
+
+⚠️ Este vehículo requiere revisión mecánica INMEDIATA antes de operar.`);
+            console.log(`🚨 Alerta crítica enviada a Francisco Pereira - Operador ${phone}`);
           }
         }
       }
@@ -182,7 +211,7 @@ app.post('/webhook', async (req, res) => {
 
       if (esAdmin) {
         if (lower.includes('reporte') || lower.includes('resumen')) {
-          await enviarReporte930();
+          await enviarReporte();
           return;
         }
         if (lower.includes('hola') || lower.includes('pedro')) {
@@ -245,40 +274,56 @@ async function analizarChecklist(imagen1, imagen2, phone) {
             },
             {
               type: 'text',
-              text: `Eres Pedro, asistente de seguridad de Inggepro. Analiza estas 2 imágenes del checklist de inspección de camión.
+              text: `Eres Pedro, inspector de seguridad de Inggepro. Tu trabajo es analizar checklists de inspección de camiones.
 
-PASO 1 — VERIFICAR CALIDAD:
-Si las fotos están borrosas, muy inclinadas, mal iluminadas o no se ven las columnas responde SOLO con:
-REENVIAR
+═══════════════════════════════
+PASO 1 — CONTROL DE CALIDAD ESTRICTO
+═══════════════════════════════
+Antes de analizar DEBES verificar TODOS estos criterios. Si CUALQUIERA falla, responde SOLO con la palabra: REENVIAR
 
-PASO 2 — ANALIZAR (solo si las fotos son legibles):
-- Busca las marcas X en la columna CF (Con Falla)
-- Ignora columnas B (Bueno) y NA (No Aplica)
-- Solo reporta ítems con X en columna CF
+CRITERIOS OBLIGATORIOS (todos deben cumplirse):
+❌ RECHAZAR si la foto está tomada en ángulo (no perpendicular a la hoja)
+❌ RECHAZAR si algún borde del checklist está cortado o fuera de la foto
+❌ RECHAZAR si hay sombras que tapan alguna columna o fila
+❌ RECHAZAR si el texto o las columnas no se leen con claridad
+❌ RECHAZAR si la imagen está movida o desenfocada
+❌ RECHAZAR si la hoja está arrugada o doblada y dificulta la lectura
+❌ RECHAZAR si no se distingue claramente la columna CF de las demás
+❌ RECHAZAR si la iluminación es insuficiente o hay zonas muy oscuras
+❌ RECHAZAR si no es claramente un checklist de inspección de Inggepro
 
-CLASIFICACIÓN:
+Sé EXTREMADAMENTE estricto. Si tienes cualquier duda sobre la calidad, responde REENVIAR.
+
+═══════════════════════════════
+PASO 2 — ANÁLISIS (solo si TODAS las condiciones se cumplen)
+═══════════════════════════════
+- Busca ÚNICAMENTE las marcas X en la columna CF (Con Falla)
+- Ignora completamente las columnas B (Bueno) y NA (No Aplica)
+- Solo reporta ítems que tengan X marcada en la columna CF
+
+CLASIFICACIÓN DE FALLAS:
 🔴 CRÍTICOS: Luces Delanteras, Mandos de Control, Sistema Eléctrico, Neumático de Repuesto, Estanque de Residuos, Estanque Agua Potable, Coplas Manguera Jet, Freno Carrete, Manguera Jet, Freno de Mano, Pedal, Delantero Derecho, Delantero Izquierdo, Trasero Derecho, Trasero Izquierdo, Aceite Motor, Aceite Hidráulico
 🟡 MEDIOS: Luces Traseras, Luces Estacionamiento, Portador Tubo Succión
 🟢 BAJOS: Luces Laterales Derecha, Luces Laterales Izquierda, Luces de Cabina
 
-Al final de tu análisis agrega en la última línea SOLO una de estas palabras:
-NIVEL:CRITICO (si hay al menos un ítem crítico con X)
-NIVEL:MEDIO (si hay ítems medios pero no críticos)
-NIVEL:BAJO (si solo hay ítems bajos)
-NIVEL:OK (si no hay ninguna X en CF)
+Al final agrega en la última línea SOLO una de estas palabras:
+NIVEL:CRITICO — si hay al menos un ítem crítico con X
+NIVEL:MEDIO — si hay ítems medios pero no críticos
+NIVEL:BAJO — si solo hay ítems bajos
+NIVEL:OK — si no hay ninguna X en columna CF
 
-Responde con este formato:
+FORMATO DE RESPUESTA:
 🚛 *Análisis Checklist Inggepro*
 📞 Operador: ${phone}
 
 📋 *Fallas detectadas (columna CF):*
-🔴 Críticas: [lista o "Ninguna"]
-🟡 Medias: [lista o "Ninguna"]
-🟢 Bajas: [lista o "Ninguna"]
+🔴 Críticas: [lista detallada o "Ninguna"]
+🟡 Medias: [lista detallada o "Ninguna"]
+🟢 Bajas: [lista detallada o "Ninguna"]
 
 ⚠️ *Nivel de riesgo:* BAJO / MEDIO / ALTO / CRÍTICO
 
-📝 *Recomendación:* [acción inmediata si hay críticos]
+📝 *Recomendación:* [acción concreta y específica]
 
 NIVEL:CRITICO`
             }
@@ -300,12 +345,9 @@ NIVEL:CRITICO`
       return { reenviar: true, analisis: null, riesgo: null, tieneCriticos: false };
     }
 
-    // Extraer nivel de riesgo
     const nivelMatch = texto.match(/NIVEL:(CRITICO|MEDIO|BAJO|OK)/);
     const nivel = nivelMatch ? nivelMatch[1] : 'OK';
     const tieneCriticos = nivel === 'CRITICO';
-
-    // Limpiar el texto eliminando la línea NIVEL:
     const analisisLimpio = texto.replace(/\nNIVEL:(CRITICO|MEDIO|BAJO|OK)/, '').trim();
 
     return {
