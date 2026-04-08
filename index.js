@@ -273,23 +273,30 @@ app.post('/webhook', async (req, res) => {
           const resultado = await analizarChecklist(imagen1, imagen2, nombreOperador, patenteOperador);
 
           if (resultado.reenviar) {
-            await sendMessage(phone,
-`❌ *Fotos rechazadas — No se puede leer el checklist*
+           await sendMessage(phone,
+`🚫 *FOTOS RECHAZADAS — NO VÁLIDAS*
 
-Por favor vuelve a tomar las fotos siguiendo EXACTAMENTE estas instrucciones:
+Las fotos que enviaste NO cumplen los estándares mínimos de calidad y *no pueden ser procesadas*. Tu checklist *NO ha sido registrado*.
 
-📸 *Instrucciones obligatorias:*
-1️⃣ Coloca el checklist sobre una superficie plana y firme
-2️⃣ La hoja debe estar completamente extendida, sin arrugas ni dobleces
-3️⃣ Toma la foto desde arriba, perpendicular a la hoja (sin ángulo)
-4️⃣ El checklist debe ocupar TODA la foto, sin cortarse ningún borde
-5️⃣ Buena iluminación — sin sombras sobre la hoja
-6️⃣ La foto debe estar enfocada — todas las letras y columnas deben leerse claramente
-7️⃣ No muevas la cámara al sacar la foto
+❌ *Posibles problemas detectados:*
+- Foto tomada en ángulo o de costado
+- Hoja cortada o fuera de encuadre
+- Imagen borrosa o desenfocada
+- Mala iluminación o sombras sobre el formulario
+- Hoja arrugada o doblada
+- No se distinguen claramente las columnas
 
-⚠️ *Si la foto no cumple estas condiciones será rechazada nuevamente.*
+✅ *Cómo debe ser la foto:*
+1️⃣ Coloca el checklist sobre una superficie PLANA y FIRME
+2️⃣ Párate encima y toma la foto desde arriba, PERPENDICULAR a la hoja
+3️⃣ La hoja completa debe verse en la foto, sin cortar ningún borde
+4️⃣ Asegúrate de tener BUENA LUZ, sin sombras
+5️⃣ Espera que la foto esté ENFOCADA antes de tomar
+6️⃣ No muevas la cámara al disparar
 
-Envía las 2 fotos nuevamente. 📋`);
+⚠️ *Recuerda: Sin checklist válido no puedes iniciar operaciones.*
+
+Envía las 2 fotos nuevamente cumpliendo estos requisitos. 📋`);
             return;
           }
 
