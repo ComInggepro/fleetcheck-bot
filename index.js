@@ -9,21 +9,12 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const VERIFY_TOKEN = 'fleetcheck2024';
 
 // ── ROLES Y CONTACTOS ──
-const SEBASTIAN = '56979798880';  // Administrador total
-const FRANCISCO_DONETCH = '56976092114'; // Admin
-const FRANCISCO_PEREIRA = '56958184612'; // Jefe de Taller
-const FRANCO_BUSTOS = '56966882256';     // Jefe de Prevención
+const SEBASTIAN = '56979798880';
+const FRANCISCO_DONETCH = '56976092114';
+const FRANCISCO_PEREIRA = '56958184612';
+const FRANCO_BUSTOS = '56966882256';
 
-// Reciben TODO
 const ADMINS = [SEBASTIAN, FRANCISCO_DONETCH];
-
-// Reciben checklists + fallas críticas + rev técnicas
-const TALLER = [FRANCISCO_PEREIRA];
-
-// Reciben alertas de licencias
-const PREVENCION = [FRANCO_BUSTOS];
-
-// Pueden pedir reportes a Pedro
 const AUTORIZADOS = [SEBASTIAN, FRANCISCO_DONETCH, FRANCISCO_PEREIRA, FRANCO_BUSTOS];
 
 // ── OPERADORES ACTIVOS ──
@@ -108,8 +99,57 @@ function parsearFecha(fechaStr) {
   return new Date(`${partes[2]}-${partes[1].padStart(2,'0')}-${partes[0].padStart(2,'0')}`);
 }
 
-// ── VERIFICAR LICENCIAS PRÓXIMAS A VENCER ──
-async function verificarLicencias() {
+// ── MENÚ OPERADOR ──
+const MENU_OPERADOR =
+`👷 *Bienvenido a Inggepro*
+Buenos días, te deseamos un gran día y que tengas un excelente turno. 🚛
+
+Para registrar tu inspección del día envía las *2 fotos de tu checklist* directamente aquí. 📋`;
+
+// ── MENÚ ADMIN/JEFES ──
+const MENU_ADMIN =
+`👋 *Hola, soy Pedro — Asistente Inggepro*
+
+¿Qué necesitas?
+
+1️⃣ *Resumen Flota* → Informe general por patente y fallas
+2️⃣ *Licencias / Rev Técnicas* → Estado de documentos
+3️⃣ *Checklist del día* → Quién envió y quién no
+
+Responde con *1*, *2* o *3*.`;
+
+// ── RESUMEN FLOTA ──
+async function generarResumenFlota(phone) {
+  const fecha = new Date().toLocaleDateString('es-CL', { timeZone: 'America/Santiago' });
+  let resumen = `🚛 *Resumen de Flota Inggepro*\n📅 ${fecha}\n\n`;
+
+  const conChecklist = OPERADORES.filter(op => registroDelDia[op.phone]?.enviado);
+  const sinChecklist = OPERADORES.filter(op => !registroDelDia[op.phone]?.enviado);
+
+  if (conChecklist.length > 0) {
+    resumen += `✅ *Vehículos con checklist hoy:*\n`;
+    conChecklist.forEach(op => {
+      const info = registroDelDia[op.phone];
+      resumen += `\n🔹 *${op.patente}* — ${op.tipo}\n`;
+      resumen += `   👤 ${op.nombre}\n`;
+      resumen += `   ⏰ ${info.hora} | Riesgo: ${info.riesgo}\n`;
+      if (info.tieneCriticos) resumen += `   🚨 TIENE FALLAS CRÍTICAS\n`;
+    });
+    resumen += '\n';
+  }
+
+  if (sinChecklist.length > 0) {
+    resumen += `❌ *Sin checklist hoy (${sinChecklist.length}):*\n`;
+    sinChecklist.forEach(op => {
+      resumen += `• ${op.patente} — ${op.nombre}\n`;
+    });
+  }
+
+  await sendMessage(phone, resumen);
+}
+
+// ── VERIFICAR LICENCIAS ──
+async function verificarLicencias(phone = null) {
   const hoy = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Santiago' }));
   const en30dias = new Date(hoy);
   en30dias.setDate(en30dias.getDate() + 30);
@@ -123,43 +163,70 @@ async function verificarLicencias() {
     const fecha = parsearFecha(op.licencia);
     if (!fecha) continue;
     if (fecha < hoy) {
-      vencidas.push({ ...op, fecha });
+      vencidas.push({ ...op });
     } else if (fecha <= en30dias) {
       const diasRestantes = Math.ceil((fecha - hoy) / (1000 * 60 * 60 * 24));
-      proximas.push({ ...op, fecha, diasRestantes });
+      proximas.push({ ...op, diasRestantes });
     }
   }
 
-  if (vencidas.length === 0 && proximas.length === 0 && recuperacion.length === 0) {
-    console.log('✅ Todas las licencias vigentes');
-    return;
-  }
-
-  let alerta = `🪪 *Alerta Licencias — Inggepro*\n📅 ${hoy.toLocaleDateString('es-CL')}\n\n`;
+  let alerta = `🪪 *Licencias / Rev Técnicas — Inggepro*\n📅 ${hoy.toLocaleDateString('es-CL')}\n\n`;
 
   if (vencidas.length > 0) {
-    alerta += `🔴 *VENCIDAS (${vencidas.length}):*\n`;
+    alerta += `🔴 *LICENCIAS VENCIDAS (${vencidas.length}):*\n`;
     vencidas.forEach(op => alerta += `• ${op.nombre} | ${op.tipo} ${op.patente} | Venció: ${op.licencia}\n`);
     alerta += '\n';
   }
-
   if (proximas.length > 0) {
     alerta += `🟡 *VENCEN EN 30 DÍAS (${proximas.length}):*\n`;
     proximas.forEach(op => alerta += `• ${op.nombre} | ${op.tipo} ${op.patente} | Vence: ${op.licencia} (${op.diasRestantes} días)\n`);
     alerta += '\n';
   }
-
   if (recuperacion.length > 0) {
     alerta += `⚠️ *EN RECUPERACIÓN:*\n`;
     recuperacion.forEach(op => alerta += `• ${op.nombre} | ${op.tipo} ${op.patente}\n`);
   }
+  if (vencidas.length === 0 && proximas.length === 0 && recuperacion.length === 0) {
+    alerta += `✅ Todas las licencias están vigentes.`;
+  }
 
-  // Enviar a Sebastián, Francisco Donetch y Franco Bustos
-  for (const dest of [SEBASTIAN, FRANCISCO_DONETCH, FRANCO_BUSTOS]) {
-    await sendMessage(dest, alerta);
+  if (phone) {
+    await sendMessage(phone, alerta);
+  } else {
+    for (const dest of [SEBASTIAN, FRANCISCO_DONETCH, FRANCO_BUSTOS]) {
+      await sendMessage(dest, alerta);
+    }
   }
 
   console.log('🪪 Alerta licencias enviada');
+}
+
+// ── CHECKLIST DEL DÍA ──
+async function reporteChecklistDia(phone) {
+  const enviaron = OPERADORES.filter(op => registroDelDia[op.phone]?.enviado);
+  const noEnviaron = OPERADORES.filter(op => !registroDelDia[op.phone]?.enviado);
+  const fecha = new Date().toLocaleDateString('es-CL', { timeZone: 'America/Santiago' });
+
+  let reporte = `📋 *Checklist del Día — Inggepro*\n📅 ${fecha}\n\n`;
+
+  reporte += `✅ *Enviaron (${enviaron.length}):*\n`;
+  if (enviaron.length > 0) {
+    enviaron.forEach(op => {
+      const info = registroDelDia[op.phone];
+      reporte += `• ${op.nombre} | ${op.tipo} ${op.patente} | ⏰ ${info.hora} | Riesgo: ${info.riesgo}${info.tieneCriticos ? ' 🚨' : ''}\n`;
+    });
+  } else {
+    reporte += `• Ninguno aún\n`;
+  }
+
+  reporte += `\n❌ *No enviaron (${noEnviaron.length}):*\n`;
+  if (noEnviaron.length > 0) {
+    noEnviaron.forEach(op => reporte += `• ${op.nombre} | ${op.tipo} ${op.patente}\n`);
+  } else {
+    reporte += `• Todos enviaron ✅\n`;
+  }
+
+  await sendMessage(phone, reporte);
 }
 
 // ── VERIFICAR REPORTES AUTOMÁTICOS ──
@@ -167,29 +234,25 @@ async function verificarReportes() {
   const ahora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Santiago' }));
   const hora = ahora.toTimeString().slice(0, 5);
   const diaSemana = ahora.getDay();
-  const diaDelMes = ahora.getDate();
 
   verificarDia();
 
-  // Reporte checklist: Lunes(1), Miércoles(3), Viernes(5) a las 09:00
   const esDiaReporte = [1, 3, 5].includes(diaSemana);
   if (hora >= '09:00' && hora <= '09:01' && esDiaReporte && !reporteEnviado) {
     reporteEnviado = true;
     await enviarReporteChecklist();
   }
 
-  // Alerta licencias: 30 días antes del vencimiento — verificar diariamente a las 08:00
   if (hora >= '08:00' && hora <= '08:01' && !alertaLicenciasEnviada) {
     alertaLicenciasEnviada = true;
     await verificarLicencias();
   }
 }
 
-// ── ENVIAR REPORTE CHECKLIST ──
+// ── ENVIAR REPORTE CHECKLIST AUTOMÁTICO ──
 async function enviarReporteChecklist() {
   const enviaron = OPERADORES.filter(op => registroDelDia[op.phone]?.enviado);
   const noEnviaron = OPERADORES.filter(op => !registroDelDia[op.phone]?.enviado);
-
   const fecha = new Date().toLocaleDateString('es-CL', { timeZone: 'America/Santiago' });
   const diasSemana = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const dia = diasSemana[new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Santiago' })).getDay()];
@@ -213,17 +276,11 @@ async function enviarReporteChecklist() {
     reporte += `• Todos enviaron ✅\n`;
   }
 
-  // Sebastián y Francisco Donetch reciben todo
-  for (const admin of ADMINS) {
-    await sendMessage(admin, reporte);
-  }
-  // Francisco Pereira también recibe reporte de checklist
+  for (const admin of ADMINS) await sendMessage(admin, reporte);
   await sendMessage(FRANCISCO_PEREIRA, reporte);
-
   console.log(`📊 Reporte ${dia} enviado`);
 }
 
-// ── REVISAR CADA MINUTO ──
 setInterval(verificarReportes, 60000);
 
 // ── WEBHOOK PRINCIPAL ──
@@ -238,7 +295,7 @@ app.post('/webhook', async (req, res) => {
 
     const phone = message.from;
     const tipo = message.type;
-    const text = message.text?.body || '';
+    const text = message.text?.body?.trim() || '';
     const esAutorizado = AUTORIZADOS.includes(phone);
     const operador = OPERADORES.find(op => op.phone === phone);
 
@@ -253,13 +310,11 @@ app.post('/webhook', async (req, res) => {
       console.log(`📸 Imagen ${imageBuffer[phone].length} recibida de ${phone}`);
 
       if (imageBuffer[phone].length === 1) {
-        await sendMessage(phone, '✅ Foto 1 recibida. Envía la foto 2 para completar.');
+        await sendMessage(phone, '📨 Foto 1 recibida. Envía la foto 2 para completar.');
         return;
       }
 
       if (imageBuffer[phone].length >= 2) {
-        await sendMessage(phone, '⏳ Checklist recibido. Verificando calidad de las fotos...');
-
         const mediaId1 = imageBuffer[phone][0];
         const mediaId2 = imageBuffer[phone][1];
         delete imageBuffer[phone];
@@ -273,34 +328,30 @@ app.post('/webhook', async (req, res) => {
           const resultado = await analizarChecklist(imagen1, imagen2, nombreOperador, patenteOperador);
 
           if (resultado.reenviar) {
-           await sendMessage(phone,
+            await sendMessage(phone,
 `🚫 *FOTOS RECHAZADAS — NO VÁLIDAS*
 
-Las fotos que enviaste NO cumplen los estándares mínimos de calidad y *no pueden ser procesadas*. Tu checklist *NO ha sido registrado*.
+Las fotos que enviaste NO cumplen los estándares mínimos de calidad. Tu checklist *NO ha sido registrado*.
 
-❌ *Posibles problemas detectados:*
-- Foto tomada en ángulo o de costado
-- Hoja cortada o fuera de encuadre
-- Imagen borrosa o desenfocada
-- Mala iluminación o sombras sobre el formulario
-- Hoja arrugada o doblada
-- No se distinguen claramente las columnas
+Para poder registrar tu inspección debes enviar las fotos cumpliendo TODOS estos requisitos:
 
-✅ *Cómo debe ser la foto:*
 1️⃣ Coloca el checklist sobre una superficie PLANA y FIRME
-2️⃣ Párate encima y toma la foto desde arriba, PERPENDICULAR a la hoja
-3️⃣ La hoja completa debe verse en la foto, sin cortar ningún borde
-4️⃣ Asegúrate de tener BUENA LUZ, sin sombras
-5️⃣ Espera que la foto esté ENFOCADA antes de tomar
-6️⃣ No muevas la cámara al disparar
+2️⃣ Párate sobre la hoja y toma la foto desde ARRIBA, en forma PERPENDICULAR
+3️⃣ La hoja COMPLETA debe verse en la foto — sin cortar ningún borde
+4️⃣ Debe haber BUENA ILUMINACIÓN — sin sombras sobre el formulario
+5️⃣ Espera que la cámara esté bien ENFOCADA antes de disparar
+6️⃣ NO muevas la cámara al tomar la foto
+7️⃣ Todos los textos y columnas deben leerse con CLARIDAD
 
-⚠️ *Recuerda: Sin checklist válido no puedes iniciar operaciones.*
+⚠️ *Sin checklist válido no puedes iniciar operaciones.*
 
-Envía las 2 fotos nuevamente cumpliendo estos requisitos. 📋`);
+Envía las 2 fotos nuevamente. 📋`);
             return;
           }
 
-          // Registrar checklist
+          // Foto buena
+          await sendMessage(phone, '✅ Checklist recibido.');
+
           registroDelDia[phone] = {
             enviado: true,
             hora: new Date().toLocaleTimeString('es-CL', { timeZone: 'America/Santiago', hour: '2-digit', minute: '2-digit' }),
@@ -308,17 +359,12 @@ Envía las 2 fotos nuevamente cumpliendo estos requisitos. 📋`);
             tieneCriticos: resultado.tieneCriticos
           };
 
-          // Notificar a Sebastián y Francisco Donetch
-          for (const admin of ADMINS) {
-            await sendMessage(admin, `📋 *Checklist recibido*\n👤 ${nombreOperador}\n🚛 ${patenteOperador}\n\n${resultado.analisis}`);
-          }
+          const msgChecklist = `📋 *Checklist recibido*\n👤 ${nombreOperador}\n🚛 ${patenteOperador}\n\n${resultado.analisis}`;
+          for (const admin of ADMINS) await sendMessage(admin, msgChecklist);
+          await sendMessage(FRANCISCO_PEREIRA, msgChecklist);
 
-          // Francisco Pereira recibe todos los checklists
-          await sendMessage(FRANCISCO_PEREIRA, `📋 *Checklist recibido*\n👤 ${nombreOperador}\n🚛 ${patenteOperador}\n\n${resultado.analisis}`);
-
-          // Alerta crítica inmediata solo a Francisco Pereira
           if (resultado.tieneCriticos) {
-            await sendMessage(FRANCISCO_PEREIRA,
+            const msgCritico =
 `🚨 *ALERTA CRÍTICA — REVISIÓN INMEDIATA*
 👤 ${nombreOperador}
 🚛 ${patenteOperador}
@@ -326,17 +372,9 @@ Envía las 2 fotos nuevamente cumpliendo estos requisitos. 📋`);
 
 ${resultado.analisis}
 
-⚠️ Este vehículo requiere revisión mecánica INMEDIATA antes de operar.`);
-
-            // Sebastián también recibe alerta crítica
-            await sendMessage(SEBASTIAN,
-`🚨 *ALERTA CRÍTICA*
-👤 ${nombreOperador}
-🚛 ${patenteOperador}
-⏰ ${registroDelDia[phone].hora}
-
-${resultado.analisis}`);
-
+⚠️ Este vehículo requiere revisión mecánica INMEDIATA antes de operar.`;
+            await sendMessage(FRANCISCO_PEREIRA, msgCritico);
+            await sendMessage(SEBASTIAN, msgCritico);
             console.log(`🚨 Alerta crítica - ${nombreOperador}`);
           }
         }
@@ -346,30 +384,29 @@ ${resultado.analisis}`);
 
     // ── MENSAJES DE TEXTO ──
     if (tipo === 'text' && text) {
-      const lower = text.toLowerCase();
 
+      // ── ADMINS Y JEFES ──
       if (esAutorizado) {
-        if (lower.includes('reporte') || lower.includes('resumen')) {
-          await enviarReporteChecklist();
+        if (text === '1') {
+          await generarResumenFlota(phone);
           return;
         }
-        if (lower.includes('licencias') || lower.includes('licencia')) {
-          await verificarLicencias();
+        if (text === '2') {
+          await verificarLicencias(phone);
           return;
         }
-        if (lower.includes('hola') || lower.includes('pedro')) {
-          await sendMessage(phone,
-`Hola 👋 Soy Pedro, asistente de Inggepro.
-
-Comandos disponibles:
-- *reporte* → Ver quién envió checklist hoy
-- *licencias* → Ver estado de licencias`);
+        if (text === '3') {
+          await reporteChecklistDia(phone);
           return;
         }
+        // Cualquier otro mensaje muestra el menú
+        await sendMessage(phone, MENU_ADMIN);
+        return;
       }
 
+      // ── OPERADORES ──
       if (!esAutorizado) {
-        await sendMessage(phone, `Para registrar tu inspección, envía las *2 fotos de tu checklist* juntas. 📋`);
+        await sendMessage(phone, MENU_OPERADOR);
         return;
       }
     }
@@ -417,16 +454,17 @@ async function analizarChecklist(imagen1, imagen2, nombreOperador, patenteOperad
 ═══════════════════════════════
 PASO 1 — CONTROL DE CALIDAD ESTRICTO
 ═══════════════════════════════
-Responde SOLO con: REENVIAR si se cumple CUALQUIERA de estas condiciones:
-❌ Foto tomada en ángulo (no perpendicular a la hoja)
-❌ Algún borde del checklist cortado o fuera de la foto
-❌ Sombras que tapan columnas o filas
-❌ Texto o columnas que no se leen con claridad
-❌ Imagen movida o desenfocada
-❌ Hoja arrugada o doblada que dificulta lectura
-❌ No se distingue claramente la columna CF
-❌ Iluminación insuficiente o zonas muy oscuras
-❌ No es un checklist de inspección de Inggepro
+Responde SOLO con la palabra REENVIAR si se cumple CUALQUIERA de estas condiciones:
+❌ Foto tomada en ángulo, no perpendicular a la hoja
+❌ Algún borde del checklist cortado o fuera del encuadre
+❌ Sombras que cubren columnas o filas
+❌ Texto o columnas que no se leen con total claridad
+❌ Imagen movida, temblorosa o desenfocada
+❌ Hoja arrugada, doblada o con pliegues que dificulten lectura
+❌ No se distingue claramente la columna CF de las demás
+❌ Iluminación insuficiente o zonas oscuras en el formulario
+❌ No corresponde a un checklist de inspección de Inggepro
+❌ El formulario no se ve completo en ambas fotos
 
 Sé EXTREMADAMENTE estricto. Cualquier duda = REENVIAR.
 
